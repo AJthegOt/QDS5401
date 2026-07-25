@@ -1,5 +1,5 @@
 ---
-title: "Appendix: R Code and Selected Output"
+title: "Reproducible Appendix"
 output:
   pdf_document: default
   html_document: default
@@ -20,7 +20,7 @@ library(tidyr)
 
 
 #Read data
-data <- read.csv("QDS_Data.csv")
+data <- read.csv("project_data.csv")
 
 #Filter data
 filtered_data <- 
@@ -34,131 +34,79 @@ filtered_data <-
          anxiety_score_post,
          anxiety_change)
 
-#Only include cases where anxiety_change is complete, 
-#remove people who declined to report race or who have unknwon race
-
-filtered_data <- filtered_data %>%
-   filter(!is.na(anxiety_change)) %>%
-   filter(race %in% c("Asian", "Black or African American", "White"))
-
-#Check structure
-str(filtered_data)
-
 #Code our categoricals
 filtered_data$sex <- factor(filtered_data$sex)
 filtered_data$race <- factor(filtered_data$race,
-                             levels = c("Asian",
+                             levels = c("American Indian or Alaska Native",
+                                        "Asian",
                                         "Black or African American",
-                                        "White"))
-
+                                        "Native Hawaiian or Pacific Islander",
+                                        "White",
+                                        "More than one race",
+                                        "Other"))
 filtered_data$school_location <- factor(filtered_data$school_location)
 filtered_data$school_type <- factor(filtered_data$school_type)
 filtered_data$grade_group <- factor(filtered_data$grade_group)
 
-summary(filtered_data)
-
-#Check skewness
-ggplot(filtered_data, 
-       mapping = aes(x = anxiety_change)) + 
-  geom_histogram()
-
-#symmetrical
-```
-
-
-
-
-
-```{r, include=F, echo = F, eval=F}
-
-
-#check variance assumption for anova
-
-var(filtered_data$anxiety_change[filtered_data$race == "Asian"])
-var(filtered_data$anxiety_change[filtered_data$race == "Black or African American"])
-var(filtered_data$anxiety_change[filtered_data$race == "White"])
 ```
 
 
 ```{r}
-#Create table one
+#Produce the baseline table 1
+
 table_one <- CreateTableOne(data = filtered_data,
+                            vars = names(filtered_data))
+
+baseline_table_one <- print(table_one, 
+              nonnormal = c("anxiety_score_pre", "anxiety_score_post"),
+              cramVars = "grade_group")
+```
+
+```{r}
+
+#Only include cases where anxiety_change is complete, remove people who declined to report race or who have unknwon race
+filtered_data_inclusion <- filtered_data %>%
+   filter(!is.na(anxiety_change)) %>%
+   filter(race %in% c("Asian", "Black or African American", "White"))
+
+#Check structure
+str(filtered_data_inclusion)
+
+```
+
+```{r}
+
+#Create table one for the analytic sample
+table_one_analytic_sample <- CreateTableOne(data = filtered_data_inclusion,
                vars = names(filtered_data))
 
 
-test <- print(table_one, 
+table_one_analytic <- print(table_one_analytic_sample, 
       nonnormal = c("anxiety_score_pre", "anxiety_score_post"),
       cramVars = "grade_group")
-
-```
-
-```{r, include=F, echo = F}
-#Creation of the line graph for pre-post scoring
-
-#LLM Prompt: arrange my data so that I can make a pre-post line graph for before and after anxiety scores
-
-anxiety_summary <- filtered_data %>%
-  select(race, anxiety_score_pre, anxiety_score_post) %>%
-  pivot_longer(
-    cols = c(anxiety_score_pre, anxiety_score_post),
-    names_to = "Time",
-    values_to = "Anxiety"
-  ) %>%
-  group_by(race, Time) %>%
-  summarise(
-    Mean = mean(Anxiety, na.rm = TRUE),
-    .groups = "drop"
-  )
-
-anxiety_summary$Time <- factor(
-  anxiety_summary$Time,
-  levels = c("anxiety_score_pre", "anxiety_score_post")
-)
-
-anxiety_summary
 ```
 
 ```{r}
-# Line graph
-ggplot(anxiety_summary, aes(x = Time, y = Mean, group = race, color = race)) +
-  geom_line(size = 1) +
-  geom_point(size = 3) +
-  labs(
-    x = "Time Questionnaire Was Taken",
-    y = "Mean Anxiety Score",
-    title = "Change in Pre/Post Anxiety Scores"
-  ) +
-  theme_classic()
-```
+#Table 2: Make a table with anxiety summary statistics grouped by the three racial groups of interest
 
-```{r}
-#bar plot
-#LLM code: need to adjust the x-axis labels so that they are at an angle for readability purposes.
-ggplot(filtered_data, mapping = aes(x = race, y = anxiety_change, color = race)) +
-  geom_boxplot() +
-  labs(
-    x = "Racial Group",
-    y = "Change in Anxiety Score (Post-Pre)",
-    title = "Change in Pre/Post Anxiety Scores"
-  ) +
-  theme_minimal() +
-  theme(
-    axis.text.x = element_text(angle = 45, hjust = 1)
-  )
-```
-```{r}
-
-#Group by filtered data
-
-barplot_input <- filtered_data %>%
+barplot_input <- filtered_data_inclusion %>%
   group_by(race) %>%
   summarise(
     n = n(),
     Mean_Anxiety_Change = mean(anxiety_change),
     Standard_Deviation = sd(anxiety_change),
     CI_Lower = Mean_Anxiety_Change - qt(0.975, df = n - 1) * Standard_Deviation / sqrt(n),
-    CI_Upper = Mean_Anxiety_Change + qt(0.975, df = n - 1) * Standard_Deviation / sqrt(n)
+    CI_Upper = Mean_Anxiety_Change + qt(0.975, df = n - 1) * Standard_Deviation / sqrt(n),
+    median = median(anxiety_change),
+    Interquartile_Range = IQR(anxiety_change)
+    
   )
+
+barplot_input
+```
+
+```{r}
+#Figure 1: Make Barplot for the Mean Anxiety Change Across the 3 racial groups of interest
 
 ggplot(barplot_input,
        aes(x = race, y = Mean_Anxiety_Change, fill = race)) +
@@ -178,14 +126,74 @@ ggplot(barplot_input,
 
 ```
 
-
 ```{r}
+#check variance assumption for anova
 
+var(filtered_data_inclusion$anxiety_change[filtered_data_inclusion$race == "Asian"])
+var(filtered_data_inclusion$anxiety_change[filtered_data_inclusion$race == "Black or African American"])
+var(filtered_data_inclusion$anxiety_change[filtered_data_inclusion$race == "White"])
+```
+```{r}
 #ANOVA Analysis
 
 res <- aov(anxiety_change ~ race, data = filtered_data)
 
 summary(res)
+```
+
+EVERYTHING BELOW THIS POINT ARE EXTRAS (NOT INCLUDED IN REPORT)
+```{r}
+anxiety_summary <- filtered_data_inclusion %>%
+  select(race, anxiety_score_pre, anxiety_score_post) %>%
+  pivot_longer(
+    cols = c(anxiety_score_pre, anxiety_score_post),
+    names_to = "Time",
+    values_to = "Anxiety"
+  ) %>%
+  group_by(race, Time) %>%
+  summarise(
+    Mean = mean(Anxiety, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+anxiety_summary$Time <- factor(
+  anxiety_summary$Time,
+  levels = c("anxiety_score_pre", "anxiety_score_post")
+)
+
+anxiety_summary
+
+
+# Line graph
+ggplot(anxiety_summary, aes(x = Time, y = Mean, group = race, color = race)) +
+  geom_line(size = 1) +
+  geom_point(size = 3) +
+  labs(
+    x = "Time Questionnaire Was Taken",
+    y = "Mean Anxiety Score",
+    title = "Change in Pre/Post Anxiety Scores"
+  ) +
+  theme_classic()
+
+
+
+
+
+
+#bar plot
+#LLM code: need to adjust the x-axis labels so that they are at an angle for readability purposes.
+ggplot(filtered_data_inclusion, mapping = aes(x = race, y = anxiety_change, color = race)) +
+  geom_boxplot() +
+  labs(
+    x = "Racial Group",
+    y = "Change in Anxiety Score (Post-Pre)",
+    title = "Change in Pre/Post Anxiety Scores"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+
 
 ```
 
